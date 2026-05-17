@@ -385,10 +385,16 @@ function renderPage(tab) {
     case 'share':  el.innerHTML = renderShare();  break;
     case 'profil':
       el.innerHTML = renderProfil();
-      // Set img src via JS to avoid CSS escaping issues with data URLs
+      // Inject photo via JS to avoid HTML/CSS escaping issues with data URLs
       if (profile.photo) {
-        const imgEl = document.getElementById('prof-avatar-img');
-        if (imgEl) imgEl.src = profile.photo;
+        const container = document.getElementById('prof-avatar-big');
+        if (container) {
+          const img = document.createElement('img');
+          img.src = profile.photo;
+          img.style.cssText = 'width:120px;height:120px;object-fit:cover;display:block';
+          container.innerHTML = '';
+          container.appendChild(img);
+        }
       }
       break;
   }
@@ -844,12 +850,12 @@ function copyShareCode() {
 function renderProfil() {
   const hasPhoto = !!profile.photo;
   const fallback = profile.gender === 'boy' ? '👦' : profile.gender === 'girl' ? '👧' : '🌟';
+  // Render img with empty src; we'll set it via JS to avoid HTML escaping issues
   return `
     <div class="kcard kc-prof" style="border-color:#AFA9EC;background:#F8F8FF">
       <div style="position:relative;width:120px;margin:0 auto 8px">
         <div id="prof-avatar-big" style="width:120px;height:120px;border-radius:50%;background:#FDE68A;display:flex;align-items:center;justify-content:center;font-size:54px;cursor:pointer;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)" onclick="triggerProfilePhoto()">
-          <span id="prof-avatar-fallback" style="display:${hasPhoto?'none':'block'}">${fallback}</span>
-          <img id="prof-avatar-img" alt="Profilová fotka" style="display:${hasPhoto?'block':'none'};width:120px;height:120px;object-fit:cover">
+          ${hasPhoto ? '' : `<span>${fallback}</span>`}
         </div>
         <div style="position:absolute;bottom:2px;right:2px;width:36px;height:36px;border-radius:50%;background:#534AB7;display:flex;align-items:center;justify-content:center;border:3px solid #F8F8FF;cursor:pointer;font-size:16px;box-shadow:0 2px 6px rgba(0,0,0,.15)" onclick="triggerProfilePhoto()" title="Změnit fotku">📷</div>
       </div>
