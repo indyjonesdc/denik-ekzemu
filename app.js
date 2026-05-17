@@ -171,12 +171,16 @@ function updateHeader() {
     : 'nastavte profil dítěte';
   const avatarEl = document.getElementById('hdr-avatar');
   if (profile.photo) {
+    // Clear any old content and add img
     avatarEl.textContent = '';
-    avatarEl.style.backgroundImage = `url('${profile.photo}')`;
-    avatarEl.style.backgroundSize = 'cover';
-    avatarEl.style.backgroundPosition = 'center';
-  } else {
     avatarEl.style.backgroundImage = '';
+    const img = document.createElement('img');
+    img.src = profile.photo;
+    img.alt = '';
+    img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
+    avatarEl.appendChild(img);
+  } else {
+    avatarEl.innerHTML = '';
     avatarEl.textContent = profile.gender === 'boy' ? '👦' : profile.gender === 'girl' ? '👧' : '🌟';
   }
 }
@@ -379,7 +383,14 @@ function renderPage(tab) {
     case 'vzorce': el.innerHTML = renderVzorce(); break;
     case 'tipy':   el.innerHTML = renderTipy();   break;
     case 'share':  el.innerHTML = renderShare();  break;
-    case 'profil': el.innerHTML = renderProfil(); break;
+    case 'profil':
+      el.innerHTML = renderProfil();
+      // Set img src via JS to avoid CSS escaping issues with data URLs
+      if (profile.photo) {
+        const imgEl = document.getElementById('prof-avatar-img');
+        if (imgEl) imgEl.src = profile.photo;
+      }
+      break;
   }
 }
 
@@ -833,14 +844,12 @@ function copyShareCode() {
 function renderProfil() {
   const hasPhoto = !!profile.photo;
   const fallback = profile.gender === 'boy' ? '👦' : profile.gender === 'girl' ? '👧' : '🌟';
-  const avatarStyle = hasPhoto
-    ? `background-image:url('${profile.photo}');background-size:cover;background-position:center;background-color:#FDE68A;`
-    : `background:#FDE68A;`;
   return `
     <div class="kcard kc-prof" style="border-color:#AFA9EC;background:#F8F8FF">
       <div style="position:relative;width:120px;margin:0 auto 8px">
-        <div id="prof-avatar-big" style="width:120px;height:120px;border-radius:50%;${avatarStyle}display:flex;align-items:center;justify-content:center;font-size:54px;cursor:pointer;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)" onclick="triggerProfilePhoto()">
-          ${hasPhoto ? '' : fallback}
+        <div id="prof-avatar-big" style="width:120px;height:120px;border-radius:50%;background:#FDE68A;display:flex;align-items:center;justify-content:center;font-size:54px;cursor:pointer;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)" onclick="triggerProfilePhoto()">
+          <span id="prof-avatar-fallback" style="display:${hasPhoto?'none':'block'}">${fallback}</span>
+          <img id="prof-avatar-img" alt="Profilová fotka" style="display:${hasPhoto?'block':'none'};width:120px;height:120px;object-fit:cover">
         </div>
         <div style="position:absolute;bottom:2px;right:2px;width:36px;height:36px;border-radius:50%;background:#534AB7;display:flex;align-items:center;justify-content:center;border:3px solid #F8F8FF;cursor:pointer;font-size:16px;box-shadow:0 2px 6px rgba(0,0,0,.15)" onclick="triggerProfilePhoto()" title="Změnit fotku">📷</div>
       </div>
