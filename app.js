@@ -2,7 +2,7 @@
 //  DENÍK EKZÉMU – app.js
 // ============================================================
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 
 // ── DATA LAYER (localStorage) ────────────────────────────────
 const DB = {
@@ -1009,8 +1009,61 @@ function handleProfilePhotoSelected(e) {
   if (!file) return;
 
   const sizeKB = Math.round(file.size / 1024);
+
+  // Detect HEIC/HEIF format
+  const isHEIC = /\.(heic|heif)$/i.test(file.name) ||
+                  /image\/heic|image\/heif/i.test(file.type || '');
+
+  if (isHEIC) {
+    toast('🍎 HEIC formát – konvertuji na JPEG…');
+    convertHeicToJpeg(file).then(jpegBlob => {
+      processImageFile(jpegBlob);
+    }).catch(err => {
+      console.error('[HEIC] Conversion failed', err);
+      toast('Konverze HEIC selhala. Vypněte HEIC v nastavení kamery telefonu.');
+    });
+    return;
+  }
+
   toast(`Načítám fotku (${sizeKB} KB)…`);
 
+  if (file.size > 20 * 1024 * 1024) {
+    toast('Fotka je moc velká (max 20 MB)');
+    return;
+  }
+
+  processImageFile(file);
+}
+
+// Load heic2any library on demand (only when needed)
+let heic2anyLoadPromise = null;
+function loadHeic2any() {
+  if (window.heic2any) return Promise.resolve(window.heic2any);
+  if (heic2anyLoadPromise) return heic2anyLoadPromise;
+
+  heic2anyLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
+    script.onload = () => {
+      if (window.heic2any) resolve(window.heic2any);
+      else reject('heic2any not available after load');
+    };
+    script.onerror = () => reject('failed to load heic2any');
+    document.head.appendChild(script);
+  });
+  return heic2anyLoadPromise;
+}
+
+function convertHeicToJpeg(file) {
+  return loadHeic2any().then(heic2any => {
+    return heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+  }).then(blob => {
+    // heic2any may return blob or array of blobs
+    return Array.isArray(blob) ? blob[0] : blob;
+  });
+}
+
+function processImageFile(file) {
   if (file.size > 20 * 1024 * 1024) {
     toast('Fotka je moc velká (max 20 MB)');
     return;
