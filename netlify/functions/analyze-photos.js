@@ -101,7 +101,38 @@ Jednou větou: zlepšení, zhoršení, nebo stabilní stav.
 
 ⚠️ Toto není lékařská diagnóza. Při zhoršení nebo pochybnostech kontaktujte dermatologa.
 
-Buď konkrétní, ale citlivý – jde o malé dítě a starostlivého rodiče.`;
+Buď konkrétní, ale citlivý – jde o malé dítě a starostlivého rodiče.
+
+---
+
+**DŮLEŽITÉ – na úplném konci odpovědi přidej tento blok s ohraničujícími rámečky pro NOVĚJŠÍ fotku (image_2):**
+
+\`\`\`json
+{
+  "regions": [
+    {
+      "label": "Krátký popis (např. 'Zhoršené zarudnutí')",
+      "type": "worse" | "better" | "same" | "new",
+      "box": [y1, x1, y2, x2],
+      "note": "Volitelná detailnější poznámka"
+    }
+  ]
+}
+\`\`\`
+
+Pravidla pro box:
+- Souřadnice v rozsahu 0–1000 (normalizováno na rozměry obrázku)
+- Formát: [y_min, x_min, y_max, x_max]
+- y je vertikální (0 = horní okraj), x je horizontální (0 = levý okraj)
+- Vyznač 1–5 oblastí na novější fotce, které stojí za pozornost
+
+Typy:
+- "worse" = horší než dříve (červená)
+- "better" = lepší/zhojené (zelená)
+- "same" = nezměněno ale stále aktivní (oranžová)
+- "new" = nově objevené (fialová)
+
+Pokud na novější fotce nevidíš nic významného k vyznačení, vrať prázdné regions: \`{"regions": []}\``;
 
     // Call Google Gemini API
     const model = 'gemini-2.5-flash';
@@ -167,10 +198,34 @@ Buď konkrétní, ale citlivý – jde o malé dítě a starostlivého rodiče.`
       };
     }
 
+    // Extract JSON block with regions
+    let regions = [];
+    let cleanText = analysis;
+    const jsonMatch = analysis.match(/```json\s*([\s\S]+?)\s*```/);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[1]);
+        if (Array.isArray(parsed.regions)) {
+          regions = parsed.regions
+            .filter(r => Array.isArray(r.box) && r.box.length === 4)
+            .map(r => ({
+              label: String(r.label || '').substring(0, 100),
+              type: ['worse', 'better', 'same', 'new'].includes(r.type) ? r.type : 'same',
+              box: r.box.map(n => Math.max(0, Math.min(1000, Number(n) || 0))),
+              note: String(r.note || '').substring(0, 200),
+            }));
+        }
+        // Remove the JSON block from displayed text
+        cleanText = analysis.replace(/```json\s*[\s\S]+?\s*```/, '').replace(/---\s*$/, '').trim();
+      } catch (err) {
+        console.warn('Failed to parse regions JSON:', err);
+      }
+    }
+
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({ analysis }),
+      body: JSON.stringify({ analysis: cleanText, regions }),
     };
   } catch (err) {
     console.error('Function error:', err);
