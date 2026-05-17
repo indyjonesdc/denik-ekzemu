@@ -163,8 +163,12 @@ function updateHeader() {
     : 'nastavte profil dítěte';
   const avatarEl = document.getElementById('hdr-avatar');
   if (profile.photo) {
-    avatarEl.innerHTML = `<img src="${profile.photo}" alt="Profilová fotka" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+    avatarEl.textContent = '';
+    avatarEl.style.backgroundImage = `url('${profile.photo}')`;
+    avatarEl.style.backgroundSize = 'cover';
+    avatarEl.style.backgroundPosition = 'center';
   } else {
+    avatarEl.style.backgroundImage = '';
     avatarEl.textContent = profile.gender === 'boy' ? '👦' : profile.gender === 'girl' ? '👧' : '🌟';
   }
 }
@@ -819,19 +823,21 @@ function copyShareCode() {
 
 // ── PROFIL PAGE ───────────────────────────────────────────────
 function renderProfil() {
-  const avatarContent = profile.photo
-    ? `<img src="${profile.photo}" alt="Profilová fotka" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
-    : (profile.gender === 'boy' ? '👦' : profile.gender === 'girl' ? '👧' : '🌟');
+  const hasPhoto = !!profile.photo;
+  const fallback = profile.gender === 'boy' ? '👦' : profile.gender === 'girl' ? '👧' : '🌟';
+  const avatarStyle = hasPhoto
+    ? `background-image:url('${profile.photo}');background-size:cover;background-position:center;background-color:#FDE68A;`
+    : `background:#FDE68A;`;
   return `
     <div class="kcard kc-prof" style="border-color:#AFA9EC;background:#F8F8FF">
-      <div style="position:relative;width:100px;margin:0 auto 8px">
-        <div class="prof-avatar-big" id="prof-avatar-big" style="width:100px;height:100px;font-size:48px;overflow:hidden;position:relative;cursor:pointer" onclick="triggerProfilePhoto()">
-          ${avatarContent}
+      <div style="position:relative;width:120px;margin:0 auto 8px">
+        <div id="prof-avatar-big" style="width:120px;height:120px;border-radius:50%;${avatarStyle}display:flex;align-items:center;justify-content:center;font-size:54px;cursor:pointer;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)" onclick="triggerProfilePhoto()">
+          ${hasPhoto ? '' : fallback}
         </div>
-        <div style="position:absolute;bottom:0;right:0;width:34px;height:34px;border-radius:50%;background:#534AB7;display:flex;align-items:center;justify-content:center;border:3px solid #F8F8FF;cursor:pointer;font-size:16px" onclick="triggerProfilePhoto()" title="Změnit fotku">📷</div>
+        <div style="position:absolute;bottom:2px;right:2px;width:36px;height:36px;border-radius:50%;background:#534AB7;display:flex;align-items:center;justify-content:center;border:3px solid #F8F8FF;cursor:pointer;font-size:16px;box-shadow:0 2px 6px rgba(0,0,0,.15)" onclick="triggerProfilePhoto()" title="Změnit fotku">📷</div>
       </div>
       <div style="text-align:center;margin-bottom:16px">
-        ${profile.photo
+        ${hasPhoto
           ? `<button onclick="removeProfilePhoto()" style="background:none;border:none;color:#A32D2D;font-size:13px;cursor:pointer;text-decoration:underline;font-family:inherit">🗑 Odstranit fotku</button>`
           : `<button onclick="triggerProfilePhoto()" style="background:none;border:none;color:#534AB7;font-size:13px;cursor:pointer;text-decoration:underline;font-family:inherit;font-weight:600">📷 Nahrát profilovou fotku</button>`
         }
