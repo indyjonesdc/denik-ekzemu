@@ -888,15 +888,13 @@ function renderProfil() {
 }
 
 function triggerProfilePhoto() {
-  // Use the existing hidden file input in DOM (more reliable on mobile)
   let input = document.getElementById('profile-photo-input');
   if (input) input.remove();
 
   input = document.createElement('input');
   input.id = 'profile-photo-input';
   input.type = 'file';
-  // Specific MIME types force iOS to convert HEIC to JPEG automatically
-  input.accept = 'image/jpeg,image/jpg,image/png,image/webp';
+  input.accept = 'image/*';
   input.style.position = 'fixed';
   input.style.left = '-9999px';
   input.style.opacity = '0';
@@ -913,23 +911,23 @@ function handleProfilePhotoSelected(e) {
     return;
   }
 
-  toast('Zpracovávám fotku…');
-  console.log('[Photo] File picked:', file.name, file.size, 'bytes', file.type);
+  // Show file info as toast for debugging
+  const sizeKB = Math.round(file.size / 1024);
+  toast(`Načítám: ${file.type || '?'} ${sizeKB} KB`);
 
   if (file.size > 15 * 1024 * 1024) {
     toast('Fotka je moc velká (max 15 MB)');
     return;
   }
 
-  // Use createImageBitmap if available – best support for HEIC and other formats
+  // Use createImageBitmap if available – best support
   if (window.createImageBitmap) {
-    console.log('[Photo] Using createImageBitmap');
     createImageBitmap(file).then(bitmap => {
-      console.log('[Photo] Bitmap created:', bitmap.width, 'x', bitmap.height);
+      toast(`Zpracovávám ${bitmap.width}×${bitmap.height}px…`);
       processBitmap(bitmap);
       bitmap.close && bitmap.close();
     }).catch(err => {
-      console.warn('[Photo] createImageBitmap failed, falling back', err);
+      toast('Bitmap selhal, zkouším FileReader');
       fallbackFileReader(file);
     });
   } else {
