@@ -2,7 +2,7 @@
 //  DENÍK EKZÉMU – app.js
 // ============================================================
 
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 
 // ── DATA LAYER (localStorage) ────────────────────────────────
 const DB = {
@@ -762,10 +762,86 @@ async function analyzePhotos(idx1, idx2) {
       .replace(/^/, '<p>')
       .replace(/$/, '</p>');
 
+    const regions = Array.isArray(result.regions) ? result.regions : [];
+    const overlayId = 'analysis-overlay-' + Date.now();
+
+    // Color and emoji map
+    const REGION_STYLES = {
+      worse:  { color: '#D85A30', bg: 'rgba(216,90,48,.18)',  emoji: '🔴', label: 'Zhoršeno' },
+      better: { color: '#1D9E75', bg: 'rgba(29,158,117,.18)', emoji: '🟢', label: 'Zlepšeno' },
+      same:   { color: '#D97706', bg: 'rgba(217,119,6,.18)',  emoji: '🟡', label: 'Stejné' },
+      new:    { color: '#7F77DD', bg: 'rgba(127,119,221,.18)',emoji: '🟣', label: 'Nové' },
+    };
+
+    let overlayHtml = '';
+    if (regions.length > 0) {
+      const legend = Array.from(new Set(regions.map(r => r.type)))
+        .map(t => REGION_STYLES[t] ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;margin-right:10px"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${REGION_STYLES[t].bg};border:2px solid ${REGION_STYLES[t].color}"></span>${REGION_STYLES[t].label}</span>` : '')
+        .join('');
+
+      overlayHtml = `
+        <div style="margin-bottom:12px;padding:14px;background:#fff;border-radius:14px;border:2px solid #B5D4F4">
+          <div style="font-size:14px;font-weight:700;color:#185FA5;margin-bottom:8px">🎯 Vyznačené oblasti na novější fotce</div>
+          <div style="position:relative;width:100%;max-width:400px;margin:0 auto;background:#f0f0f0;border-radius:12px;overflow:hidden">
+            <img id="${overlayId}-img" src="${p1.data}" style="width:100%;display:block">
+            <svg id="${overlayId}-svg" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none" preserveAspectRatio="none"></svg>
+          </div>
+          <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:4px">${legend}</div>
+          <div id="${overlayId}-list" style="margin-top:10px"></div>
+        </div>`;
+    }
+
     box.innerHTML = `<div class="analysis-box">
       <div class="analysis-title">🔍 Porovnání: ${p2.date} ${p2.time} → ${p1.date} ${p1.time}</div>
+      ${overlayHtml}
       <div class="analysis-body">${formatted}</div>
     </div>`;
+
+    // Render the bounding boxes via SVG after image loads
+    if (regions.length > 0) {
+      const imgEl = document.getElementById(overlayId + '-img');
+      const svgEl = document.getElementById(overlayId + '-svg');
+      const listEl = document.getElementById(overlayId + '-list');
+
+      const drawBoxes = () => {
+        const W = imgEl.offsetWidth;
+        const H = imgEl.offsetHeight;
+        svgEl.setAttribute('viewBox', `0 0 1000 1000`);
+        svgEl.style.height = H + 'px';
+
+        let svgContent = '';
+        let listContent = '';
+        regions.forEach((r, i) => {
+          const style = REGION_STYLES[r.type] || REGION_STYLES.same;
+          const [y1, x1, y2, x2] = r.box;
+          const bw = Math.max(0, x2 - x1);
+          const bh = Math.max(0, y2 - y1);
+
+          svgContent += `
+            <rect x="${x1}" y="${y1}" width="${bw}" height="${bh}"
+                  fill="${style.bg}" stroke="${style.color}" stroke-width="6"
+                  rx="12" ry="12"/>
+            <circle cx="${x1 + 22}" cy="${y1 + 22}" r="20" fill="${style.color}"/>
+            <text x="${x1 + 22}" y="${y1 + 30}" text-anchor="middle" fill="#fff"
+                  font-size="24" font-weight="700" font-family="-apple-system,sans-serif">${i + 1}</text>`;
+
+          listContent += `
+            <div style="display:flex;align-items:flex-start;gap:8px;padding:8px;background:${style.bg};border-radius:10px;border-left:4px solid ${style.color};margin-bottom:6px">
+              <div style="width:24px;height:24px;border-radius:50%;background:${style.color};color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0">${i + 1}</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:600;color:${style.color}">${style.emoji} ${r.label || style.label}</div>
+                ${r.note ? `<div style="font-size:12px;color:#555;margin-top:2px;line-height:1.4">${r.note}</div>` : ''}
+              </div>
+            </div>`;
+        });
+        svgEl.innerHTML = svgContent;
+        listEl.innerHTML = listContent;
+      };
+
+      if (imgEl.complete) drawBoxes();
+      else imgEl.addEventListener('load', drawBoxes);
+      window.addEventListener('resize', drawBoxes);
+    }
   } catch (err) {
     console.error('[Analyze] error', err);
     box.innerHTML = `<div class="analysis-box">
