@@ -889,14 +889,14 @@ function renderProfil() {
 
 function triggerProfilePhoto() {
   // Use the existing hidden file input in DOM (more reliable on mobile)
-  // by creating one that persists until selection completes
   let input = document.getElementById('profile-photo-input');
   if (input) input.remove();
 
   input = document.createElement('input');
   input.id = 'profile-photo-input';
   input.type = 'file';
-  input.accept = 'image/*';
+  // Specific MIME types force iOS to convert HEIC to JPEG automatically
+  input.accept = 'image/jpeg,image/jpg,image/png,image/webp';
   input.style.position = 'fixed';
   input.style.left = '-9999px';
   input.style.opacity = '0';
