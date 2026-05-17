@@ -16,7 +16,7 @@ const DB = {
 
 // ── STATE ────────────────────────────────────────────────────
 let currentUser  = DB.get('ekz_user');
-let profile      = DB.get('ekz_profile', { name:'', age:null, gender:'', notes:'', allergy:'' });
+let profile      = DB.get('ekz_profile', { name:'', age:null, gender:'', notes:'', allergy:'', photo:'' });
 let data         = DB.get('ekz_data', []);
 let photos       = DB.get('ekz_photos', []);
 let sharedWith   = DB.get('ekz_shared', []);
@@ -161,8 +161,12 @@ function updateHeader() {
   document.getElementById('hdr-sub').textContent  = profile.age
     ? `${profile.age} • ${profile.name ? profile.name + ' • ' : ''}ekzém pod kontrolou`
     : 'nastavte profil dítěte';
-  document.getElementById('hdr-avatar').textContent =
-    profile.gender === 'boy' ? '👦' : profile.gender === 'girl' ? '👧' : '🌟';
+  const avatarEl = document.getElementById('hdr-avatar');
+  if (profile.photo) {
+    avatarEl.innerHTML = `<img src="${profile.photo}" alt="Profilová fotka" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+  } else {
+    avatarEl.textContent = profile.gender === 'boy' ? '👦' : profile.gender === 'girl' ? '👧' : '🌟';
+  }
 }
 
 // ── NAVIGATION ───────────────────────────────────────────────
@@ -815,10 +819,22 @@ function copyShareCode() {
 
 // ── PROFIL PAGE ───────────────────────────────────────────────
 function renderProfil() {
+  const avatarContent = profile.photo
+    ? `<img src="${profile.photo}" alt="Profilová fotka" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+    : (profile.gender === 'boy' ? '👦' : profile.gender === 'girl' ? '👧' : '🌟');
   return `
     <div class="kcard kc-prof" style="border-color:#AFA9EC;background:#F8F8FF">
-      <div class="prof-avatar-big" id="prof-avatar-big">
-        ${profile.gender === 'boy' ? '👦' : profile.gender === 'girl' ? '👧' : '🌟'}
+      <div style="position:relative;width:100px;margin:0 auto 8px">
+        <div class="prof-avatar-big" id="prof-avatar-big" style="width:100px;height:100px;font-size:48px;overflow:hidden;position:relative;cursor:pointer" onclick="triggerProfilePhoto()">
+          ${avatarContent}
+        </div>
+        <div style="position:absolute;bottom:0;right:0;width:34px;height:34px;border-radius:50%;background:#534AB7;display:flex;align-items:center;justify-content:center;border:3px solid #F8F8FF;cursor:pointer;font-size:16px" onclick="triggerProfilePhoto()" title="Změnit fotku">📷</div>
+      </div>
+      <div style="text-align:center;margin-bottom:16px">
+        ${profile.photo
+          ? `<button onclick="removeProfilePhoto()" style="background:none;border:none;color:#A32D2D;font-size:13px;cursor:pointer;text-decoration:underline;font-family:inherit">🗑 Odstranit fotku</button>`
+          : `<button onclick="triggerProfilePhoto()" style="background:none;border:none;color:#534AB7;font-size:13px;cursor:pointer;text-decoration:underline;font-family:inherit;font-weight:600">📷 Nahrát profilovou fotku</button>`
+        }
       </div>
       <span class="inp-label" style="margin-top:0">Jméno dítěte</span>
       <input class="inp" id="prof-name" value="${profile.name}" placeholder="Jméno dítěte…">
@@ -842,6 +858,54 @@ function renderProfil() {
     </div>`;
 }
 
+function triggerProfilePhoto() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast('Fotka je moc velká (max 10 MB)');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      // Resize to ~400px square for storage efficiency
+      const img = new Image();
+      img.onload = () => {
+        const SIZE = 400;
+        const canvas = document.createElement('canvas');
+        canvas.width = SIZE;
+        canvas.height = SIZE;
+        const ctx = canvas.getContext('2d');
+        // crop to square (center)
+        const min = Math.min(img.width, img.height);
+        const sx = (img.width - min) / 2;
+        const sy = (img.height - min) / 2;
+        ctx.drawImage(img, sx, sy, min, min, 0, 0, SIZE, SIZE);
+        profile.photo = canvas.toDataURL('image/jpeg', 0.85);
+        saveProfile();
+        updateHeader();
+        renderPage('profil');
+        toast('Fotka nahrána ✓');
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+}
+
+function removeProfilePhoto() {
+  if (!confirm('Odstranit profilovou fotku?')) return;
+  profile.photo = '';
+  saveProfile();
+  updateHeader();
+  renderPage('profil');
+  toast('Fotka odstraněna');
+}
+
 function pickAge(age, btn) {
   selAge = age;
   document.querySelectorAll('.agesel .agebtn').forEach(b => b.classList.remove('on'));
@@ -851,7 +915,9 @@ function pickGender(g, btn) {
   selGender = g;
   document.querySelectorAll('.gender-btn').forEach(b => b.classList.remove('on'));
   btn.classList.add('on');
-  document.getElementById('prof-avatar-big').textContent = g === 'boy' ? '👦' : '👧';
+  if (!profile.photo) {
+    document.getElementById('prof-avatar-big').textContent = g === 'boy' ? '👦' : '👧';
+  }
 }
 
 function saveProfilForm() {
