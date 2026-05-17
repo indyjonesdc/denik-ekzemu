@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ekzem-v13';
+const CACHE_NAME = 'ekzem-v14';
 const URLS = ['/index.html','/app.js','/manifest.json','/icons/icon-192.png','/icons/icon-512.png'];
 
 self.addEventListener('install', e => {

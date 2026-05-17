@@ -2,7 +2,7 @@
 //  DENÍK EKZÉMU – app.js
 // ============================================================
 
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 
 // ── DATA LAYER (localStorage) ────────────────────────────────
 const DB = {
@@ -583,28 +583,132 @@ function renderFoto() {
 
 function triggerPhoto(ctx) {
   photoContext = ctx;
-  document.getElementById('file-input').click();
+  const input = document.getElementById('file-input');
+  input.value = '';
+  input.click();
 }
 
 function handlePhotoUpload(input) {
-  const file = input.files[0];
+  const file = input.files && input.files[0];
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    const photo = {
-      id: Date.now(),
-      date: new Date().toLocaleDateString('cs-CZ'),
-      time: nowTime(),
-      data: e.target.result,
-      note: ''
-    };
-    photos.unshift(photo);
-    DB.set('ekz_photos', photos);
-    toast('Fotka uložena ✓');
-    renderPage('foto');
-  };
-  reader.readAsDataURL(file);
+
+  const sizeKB = Math.round(file.size / 1024);
+  const isHEIC = /\.(heic|heif)$/i.test(file.name) ||
+                  /image\/heic|image\/heif/i.test(file.type || '');
+
+  if (isHEIC) {
+    toast('🍎 HEIC formát – konvertuji…');
+    convertHeicToJpeg(file).then(jpegBlob => {
+      processEkzemPhoto(jpegBlob);
+    }).catch(err => {
+      console.error('[Ekzem HEIC] failed', err);
+      toast('Konverze HEIC selhala.');
+    });
+    input.value = '';
+    return;
+  }
+
+  toast(`Načítám fotku (${sizeKB} KB)…`);
+  if (file.size > 20 * 1024 * 1024) {
+    toast('Fotka je moc velká (max 20 MB)');
+    input.value = '';
+    return;
+  }
+
+  processEkzemPhoto(file);
   input.value = '';
+}
+
+function processEkzemPhoto(file) {
+  const MAX_SIZE = 1024;
+  const QUALITY = 0.8;
+
+  const resize = (source, w, h) => {
+    if (!w || !h || w < 10 || h < 10) throw new Error('invalid dimensions');
+    let nw = w, nh = h;
+    if (w > h && w > MAX_SIZE) { nw = MAX_SIZE; nh = Math.round(h * MAX_SIZE / w); }
+    else if (h > MAX_SIZE) { nh = MAX_SIZE; nw = Math.round(w * MAX_SIZE / h); }
+    const canvas = document.createElement('canvas');
+    canvas.width = nw;
+    canvas.height = nh;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(source, 0, 0, nw, nh);
+    return canvas.toDataURL('image/jpeg', QUALITY);
+  };
+
+  const tryBitmap = () => {
+    if (!window.createImageBitmap) return Promise.reject('no bitmap');
+    return createImageBitmap(file).then(bitmap => {
+      const result = resize(bitmap, bitmap.width, bitmap.height);
+      bitmap.close && bitmap.close();
+      return result;
+    });
+  };
+
+  const tryImage = () => {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      const cleanup = () => URL.revokeObjectURL(url);
+      let done = false;
+      const timer = setTimeout(() => {
+        if (done) return; done = true; cleanup(); reject('timeout');
+      }, 10000);
+      img.onload = () => {
+        if (done) return; done = true; clearTimeout(timer);
+        try {
+          const r = resize(img, img.naturalWidth || img.width, img.naturalHeight || img.height);
+          cleanup(); resolve(r);
+        } catch (err) { cleanup(); reject(err); }
+      };
+      img.onerror = () => {
+        if (done) return; done = true; clearTimeout(timer); cleanup(); reject('image error');
+      };
+      img.src = url;
+    });
+  };
+
+  tryBitmap()
+    .catch(() => tryImage())
+    .then(dataUrl => {
+      if (!dataUrl) throw new Error('no data');
+      saveEkzemPhoto(dataUrl);
+    })
+    .catch(err => {
+      console.error('[Ekzem photo] all methods failed', err);
+      toast('Nepodařilo se zpracovat fotku.');
+    });
+}
+
+function saveEkzemPhoto(dataUrl) {
+  const photo = {
+    id: Date.now(),
+    date: new Date().toLocaleDateString('cs-CZ'),
+    time: nowTime(),
+    data: dataUrl,
+    note: ''
+  };
+  photos.unshift(photo);
+
+  if (photos.length > 20) photos = photos.slice(0, 20);
+
+  let ok = DB.set('ekz_photos', photos);
+  if (!ok) {
+    while (photos.length > 5) {
+      photos.pop();
+      if (DB.set('ekz_photos', photos)) { ok = true; break; }
+    }
+    if (!ok) {
+      photos.shift();
+      toast('⚠️ Úložiště plné. Smažte starší fotky.');
+      return;
+    }
+    toast('Úložiště téměř plné – starší fotky smazány');
+  }
+
+  const sizeKB = Math.round(dataUrl.length / 1024);
+  toast(`✅ Fotka uložena (${sizeKB} KB)`);
+  renderPage('foto');
 }
 
 async function analyzePhotos(idx1, idx2) {
@@ -620,6 +724,15 @@ async function analyzePhotos(idx1, idx2) {
   </div>`;
 
   try {
+    const totalSize = (p1.data.length + p2.data.length);
+    if (totalSize > 5 * 1024 * 1024) {
+      box.innerHTML = `<div class="analysis-box">
+        <div class="analysis-title" style="color:#A32D2D">⚠️ Fotky jsou moc velké</div>
+        <div class="analysis-body">Vyfoťte nové (menší) snímky a zkuste znovu. Aktuální velikost: ${Math.round(totalSize/1024)} KB.</div>
+      </div>`;
+      return;
+    }
+
     const response = await fetch('/api/analyze-photos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -637,13 +750,12 @@ async function analyzePhotos(idx1, idx2) {
 
     if (!response.ok) {
       box.innerHTML = `<div class="analysis-box">
-        <div class="analysis-title" style="color:#A32D2D">⚠️ Chyba analýzy</div>
+        <div class="analysis-title" style="color:#A32D2D">⚠️ Chyba analýzy (HTTP ${response.status})</div>
         <div class="analysis-body">${result.error || 'Neznámá chyba'}</div>
       </div>`;
       return;
     }
 
-    // Render with markdown-like formatting
     const formatted = (result.analysis || 'Analýza se nezdařila.')
       .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#185FA5">$1</strong>')
       .replace(/\n\n/g, '</p><p style="margin-top:10px">')
@@ -655,12 +767,14 @@ async function analyzePhotos(idx1, idx2) {
       <div class="analysis-body">${formatted}</div>
     </div>`;
   } catch (err) {
+    console.error('[Analyze] error', err);
     box.innerHTML = `<div class="analysis-box">
       <div class="analysis-title" style="color:#A32D2D">⚠️ Chyba spojení</div>
-      <div class="analysis-body">Nepodařilo se připojit k AI funkci. Zkontrolujte internetové připojení.</div>
+      <div class="analysis-body">Nepodařilo se připojit k AI funkci. ${err.message || ''}</div>
     </div>`;
   }
 }
+
 
 // ── MORE PAGE ─────────────────────────────────────────────────
 function renderMore() {
