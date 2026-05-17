@@ -690,8 +690,108 @@ function renderMore() {
     <button class="action-btn ab-blue" onclick="goTab('share')">👥 Sdílení s rodinou</button>
     <div class="section-label">Nastavení</div>
     <button class="action-btn ab-blue" onclick="goTab('profil')">👶 Profil dítěte</button>
+    <button class="action-btn ab-orange" onclick="showAbout()">ℹ️ O aplikaci a diagnostika</button>
     <button class="action-btn ab-red" onclick="logout()">🚪 Odhlásit se</button>
     <div class="version-tag">Deník ekzému v${APP_VERSION}</div>`;
+}
+
+function showAbout() {
+  const ua = navigator.userAgent;
+  // Detect browser
+  let browser = 'Neznámý';
+  if (/Edg\//.test(ua)) browser = 'Microsoft Edge';
+  else if (/Chrome\/.*Safari/.test(ua) && !/Edg|OPR|YaBrowser|Samsung/.test(ua)) browser = 'Google Chrome';
+  else if (/SamsungBrowser/.test(ua)) browser = 'Samsung Internet';
+  else if (/Firefox/.test(ua)) browser = 'Mozilla Firefox';
+  else if (/OPR\//.test(ua)) browser = 'Opera';
+  else if (/Safari/.test(ua) && !/Chrome/.test(ua)) browser = 'Safari';
+
+  // Browser version
+  const verMatch = ua.match(/(?:Chrome|Firefox|Safari|Edg|OPR|SamsungBrowser)\/([\d.]+)/);
+  const version = verMatch ? verMatch[1] : '?';
+
+  // OS detection
+  let os = 'Neznámý';
+  if (/Android/.test(ua)) {
+    const m = ua.match(/Android ([\d.]+)/);
+    os = 'Android' + (m ? ' ' + m[1] : '');
+  } else if (/iPhone|iPad|iPod/.test(ua)) {
+    const m = ua.match(/OS ([\d_]+)/);
+    os = 'iOS' + (m ? ' ' + m[1].replace(/_/g,'.') : '');
+  } else if (/Windows/.test(ua)) os = 'Windows';
+  else if (/Mac OS X/.test(ua)) os = 'macOS';
+  else if (/Linux/.test(ua)) os = 'Linux';
+
+  // PWA mode detection
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+
+  // Storage usage estimation
+  let storageInfo = 'Neznámé';
+  try {
+    let total = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      total += (localStorage.getItem(k) || '').length;
+    }
+    storageInfo = Math.round(total / 1024) + ' KB použito';
+  } catch(e) {}
+
+  // Feature detection
+  const hasBitmap = typeof window.createImageBitmap === 'function';
+  const hasSW = 'serviceWorker' in navigator;
+  const hasCamera = typeof navigator.mediaDevices?.getUserMedia === 'function';
+
+  const screen = window.innerWidth + ' × ' + window.innerHeight;
+
+  const html = `
+    <div class="kcard" style="background:#fff">
+      <div class="section-title">ℹ️ O aplikaci</div>
+      <div style="font-size:14px;line-height:1.7;color:#555">
+        <div><strong>Verze:</strong> ${APP_VERSION}</div>
+        <div><strong>Režim:</strong> ${standalone ? '📲 Nainstalováno na ploše' : '🌐 Prohlížeč'}</div>
+      </div>
+    </div>
+    <div class="kcard" style="background:#fff;margin-top:12px">
+      <div class="section-title">🌐 Prohlížeč a OS</div>
+      <div style="font-size:14px;line-height:1.7;color:#555">
+        <div><strong>Prohlížeč:</strong> ${browser}</div>
+        <div><strong>Verze:</strong> ${version}</div>
+        <div><strong>Systém:</strong> ${os}</div>
+        <div><strong>Rozlišení:</strong> ${screen}</div>
+      </div>
+    </div>
+    <div class="kcard" style="background:#fff;margin-top:12px">
+      <div class="section-title">🔧 Podporované funkce</div>
+      <div style="font-size:14px;line-height:1.7;color:#555">
+        <div>${hasBitmap ? '✅' : '❌'} createImageBitmap (zpracování fotek)</div>
+        <div>${hasSW ? '✅' : '❌'} Service Worker (offline režim)</div>
+        <div>${hasCamera ? '✅' : '❌'} Kamera</div>
+      </div>
+    </div>
+    <div class="kcard" style="background:#fff;margin-top:12px">
+      <div class="section-title">💾 Úložiště</div>
+      <div style="font-size:14px;line-height:1.7;color:#555">
+        <div><strong>Lokální data:</strong> ${storageInfo}</div>
+        <div><strong>Záznamy:</strong> ${data.length}</div>
+        <div><strong>Fotky ekzému:</strong> ${photos.length}</div>
+      </div>
+    </div>
+    <div class="kcard" style="background:#f5f5f5;margin-top:12px">
+      <div class="section-title" style="font-size:12px">📋 User Agent (pro vývojáře)</div>
+      <div style="font-size:11px;color:#666;word-break:break-all;font-family:monospace;line-height:1.5">${ua}</div>
+      <button onclick="copyToClipboard('${ua.replace(/'/g,"\\'")}')" style="margin-top:10px;padding:8px 14px;border-radius:10px;border:1.5px solid #e8e8e8;background:#fff;font-size:13px;cursor:pointer;font-family:inherit;font-weight:600">📋 Zkopírovat</button>
+    </div>
+    <button class="action-btn ab-orange" style="margin-top:12px" onclick="goTab('more')">← Zpět</button>`;
+
+  document.getElementById('page-content').innerHTML = html;
+}
+
+function copyToClipboard(text) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => toast('Zkopírováno ✓'));
+  } else {
+    toast('Schránka není dostupná');
+  }
 }
 
 // ── VZORCE PAGE ───────────────────────────────────────────────
