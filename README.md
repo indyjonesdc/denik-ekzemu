@@ -1,0 +1,2 @@
+# denik-ekzemu
+Deník ekzemu
