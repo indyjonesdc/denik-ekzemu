@@ -10,7 +10,13 @@ const DB = {
     try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : def; } catch { return def; }
   },
   set(key, val) {
-    try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) { console.warn('Storage full', e); }
+    try {
+      localStorage.setItem(key, JSON.stringify(val));
+      return true;
+    } catch(e) {
+      console.warn('[DB] Storage error', e);
+      return false;
+    }
   }
 };
 
@@ -141,11 +147,13 @@ function saveData() {
 }
 
 function saveProfile() {
+  let ok = true;
   if (currentUser && currentUser.email !== 'demo@ekzem.app') {
     const key = 'ekz_profile_' + currentUser.email.replace(/[^a-z0-9]/g,'_');
-    DB.set(key, profile);
+    ok = DB.set(key, profile) && ok;
   }
-  DB.set('ekz_profile', profile);
+  ok = DB.set('ekz_profile', profile) && ok;
+  return ok;
 }
 
 function showApp() {
@@ -891,6 +899,7 @@ function handleProfilePhotoSelected(e) {
   }
 
   toast('Zpracovávám fotku…');
+  console.log('[Photo] File picked:', file.name, file.size, 'bytes', file.type);
 
   if (file.size > 15 * 1024 * 1024) {
     toast('Fotka je moc velká (max 15 MB)');
@@ -898,14 +907,15 @@ function handleProfilePhotoSelected(e) {
   }
 
   const reader = new FileReader();
-
   reader.onerror = () => {
     toast('Chyba při čtení fotky');
-    console.error('FileReader error', reader.error);
+    console.error('[Photo] FileReader error', reader.error);
   };
 
   reader.onload = (ev) => {
     const dataUrl = ev.target.result;
+    console.log('[Photo] Data URL length:', dataUrl?.length, 'first 50:', dataUrl?.substring(0, 50));
+
     if (!dataUrl || typeof dataUrl !== 'string') {
       toast('Fotka se nenačetla');
       return;
@@ -914,29 +924,20 @@ function handleProfilePhotoSelected(e) {
     const img = new Image();
 
     img.onerror = (err) => {
-      console.error('Image load error', err);
-      // Fallback: try to save the raw data URL directly (no resize)
-      // This works for most JPEG/PNG even if Image() fails
-      if (dataUrl.length < 2 * 1024 * 1024) {
-        profile.photo = dataUrl;
-        saveProfile();
-        updateHeader();
-        renderPage('profil');
-        toast('Fotka uložena (bez úpravy)');
-      } else {
-        toast('Tento formát fotky nelze zobrazit. Zkuste JPG nebo PNG.');
-      }
+      console.warn('[Photo] Image() failed, trying direct save', err);
+      // Fallback: save raw data url
+      saveProfilePhoto(dataUrl);
     };
 
     img.onload = () => {
+      console.log('[Photo] Image loaded:', img.width, 'x', img.height);
       try {
-        const SIZE = 400;
+        const SIZE = 240; // smaller for reliable localStorage fit
         const canvas = document.createElement('canvas');
         canvas.width = SIZE;
         canvas.height = SIZE;
         const ctx = canvas.getContext('2d');
 
-        // Square crop from center
         const min = Math.min(img.width, img.height);
         if (!min || min < 10) {
           toast('Fotka má neplatné rozměry');
@@ -945,14 +946,11 @@ function handleProfilePhotoSelected(e) {
         const sx = (img.width - min) / 2;
         const sy = (img.height - min) / 2;
         ctx.drawImage(img, sx, sy, min, min, 0, 0, SIZE, SIZE);
-
-        profile.photo = canvas.toDataURL('image/jpeg', 0.85);
-        saveProfile();
-        updateHeader();
-        renderPage('profil');
-        toast('Fotka nahrána ✓');
+        const resized = canvas.toDataURL('image/jpeg', 0.75);
+        console.log('[Photo] Resized to:', resized.length, 'bytes');
+        saveProfilePhoto(resized);
       } catch (err) {
-        console.error('Canvas error', err);
+        console.error('[Photo] Canvas error', err);
         toast('Chyba při zpracování fotky');
       }
     };
@@ -961,6 +959,33 @@ function handleProfilePhotoSelected(e) {
   };
 
   reader.readAsDataURL(file);
+}
+
+function saveProfilePhoto(dataUrl) {
+  console.log('[Photo] Saving, length:', dataUrl.length, 'bytes (~' + Math.round(dataUrl.length/1024) + ' KB)');
+  profile.photo = dataUrl;
+
+  const ok = saveProfile();
+  console.log('[Photo] saveProfile returned:', ok);
+
+  // Verify it was actually saved
+  const verify = DB.get('ekz_profile');
+  console.log('[Photo] Verify – stored photo length:', verify?.photo?.length || 0);
+
+  if (!verify?.photo) {
+    profile.photo = '';
+    toast('⚠️ Úložiště plné. Vymažte starší fotky ekzému v záložce 📷');
+    return;
+  }
+
+  updateHeader();
+  // Force re-render of profil page
+  if (currentTab === 'profil') {
+    renderPage('profil');
+  } else {
+    goTab('profil');
+  }
+  toast('Fotka nahrána ✓ (' + Math.round(dataUrl.length/1024) + ' KB)');
 }
 
 function removeProfilePhoto() {
