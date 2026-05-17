@@ -2,7 +2,7 @@
 //  DENÍK EKZÉMU – app.js
 // ============================================================
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 
 // ── DATA LAYER (localStorage) ────────────────────────────────
 const DB = {
@@ -1235,11 +1235,88 @@ function toast(msg) {
   setTimeout(() => el.classList.remove('show'), 2500);
 }
 
+// ── UPDATE BANNER ─────────────────────────────────────────────
+function showUpdateBanner(registration) {
+  // Don't show if already visible
+  if (document.getElementById('update-banner')) return;
+
+  const banner = document.createElement('div');
+  banner.id = 'update-banner';
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:linear-gradient(135deg,#534AB7 0%,#7F77DD 100%);color:#fff;padding:14px 16px;display:flex;align-items:center;gap:10px;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.25);animation:slideDown .35s ease-out';
+  banner.innerHTML = `
+    <div style="font-size:22px">✨</div>
+    <div style="flex:1;font-size:13px;font-weight:600;line-height:1.35">
+      <div>Nová verze aplikace je k dispozici!</div>
+      <div style="font-size:11px;opacity:.85;margin-top:1px;font-weight:500">Klepněte pro aktualizaci</div>
+    </div>
+    <button id="update-btn" style="background:#fff;color:#534AB7;border:none;border-radius:99px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">Aktualizovat</button>
+    <button id="update-close" style="background:rgba(255,255,255,.2);color:#fff;border:none;border-radius:50%;width:28px;height:28px;font-size:14px;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;flex-shrink:0">✕</button>
+  `;
+
+  // Add slide-down animation
+  if (!document.getElementById('update-banner-style')) {
+    const style = document.createElement('style');
+    style.id = 'update-banner-style';
+    style.textContent = '@keyframes slideDown{from{transform:translateY(-100%)}to{transform:translateY(0)}}';
+    document.head.appendChild(style);
+  }
+
+  document.body.appendChild(banner);
+
+  document.getElementById('update-btn').onclick = () => {
+    // Tell new SW to activate immediately
+    if (registration.waiting) {
+      registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+    }
+    banner.innerHTML = '<div style="font-size:13px;text-align:center;width:100%;padding:4px 0">🔄 Aktualizuji…</div>';
+  };
+
+  document.getElementById('update-close').onclick = () => {
+    banner.remove();
+  };
+}
+
 // ── INIT ──────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   if (currentUser) showApp();
-  // Register service worker
+
+  // Register service worker with update detection
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    navigator.serviceWorker.register('sw.js').then(registration => {
+      console.log('[SW] Registered');
+
+      // Check for updates every 30 seconds when app is open
+      setInterval(() => {
+        registration.update().catch(() => {});
+      }, 30000);
+
+      // Listen for new service worker waiting to take over
+      registration.addEventListener('updatefound', () => {
+        const newWorker = registration.installing;
+        console.log('[SW] Update found, installing...');
+        if (!newWorker) return;
+
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            // New version is ready
+            console.log('[SW] New version ready');
+            showUpdateBanner(registration);
+          }
+        });
+      });
+
+      // If there's already a waiting worker (e.g. user revisits)
+      if (registration.waiting && navigator.serviceWorker.controller) {
+        showUpdateBanner(registration);
+      }
+    }).catch(err => console.warn('[SW] Registration failed', err));
+
+    // Reload page after new SW takes control
+    let reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloading) return;
+      reloading = true;
+      window.location.reload();
+    });
   }
 });
