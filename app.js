@@ -859,42 +859,102 @@ function renderProfil() {
 }
 
 function triggerProfilePhoto() {
-  const input = document.createElement('input');
+  // Use the existing hidden file input in DOM (more reliable on mobile)
+  // by creating one that persists until selection completes
+  let input = document.getElementById('profile-photo-input');
+  if (input) input.remove();
+
+  input = document.createElement('input');
+  input.id = 'profile-photo-input';
   input.type = 'file';
   input.accept = 'image/*';
-  input.onchange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      toast('Fotka je moc velká (max 10 MB)');
+  input.style.position = 'fixed';
+  input.style.left = '-9999px';
+  input.style.opacity = '0';
+  document.body.appendChild(input);
+
+  input.addEventListener('change', handleProfilePhotoSelected);
+  input.click();
+}
+
+function handleProfilePhotoSelected(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) {
+    toast('Žádná fotka nebyla vybrána');
+    return;
+  }
+
+  toast('Zpracovávám fotku…');
+
+  if (file.size > 15 * 1024 * 1024) {
+    toast('Fotka je moc velká (max 15 MB)');
+    return;
+  }
+
+  const reader = new FileReader();
+
+  reader.onerror = () => {
+    toast('Chyba při čtení fotky');
+    console.error('FileReader error', reader.error);
+  };
+
+  reader.onload = (ev) => {
+    const dataUrl = ev.target.result;
+    if (!dataUrl || typeof dataUrl !== 'string') {
+      toast('Fotka se nenačetla');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      // Resize to ~400px square for storage efficiency
-      const img = new Image();
-      img.onload = () => {
+
+    const img = new Image();
+
+    img.onerror = (err) => {
+      console.error('Image load error', err);
+      // Fallback: try to save the raw data URL directly (no resize)
+      // This works for most JPEG/PNG even if Image() fails
+      if (dataUrl.length < 2 * 1024 * 1024) {
+        profile.photo = dataUrl;
+        saveProfile();
+        updateHeader();
+        renderPage('profil');
+        toast('Fotka uložena (bez úpravy)');
+      } else {
+        toast('Tento formát fotky nelze zobrazit. Zkuste JPG nebo PNG.');
+      }
+    };
+
+    img.onload = () => {
+      try {
         const SIZE = 400;
         const canvas = document.createElement('canvas');
         canvas.width = SIZE;
         canvas.height = SIZE;
         const ctx = canvas.getContext('2d');
-        // crop to square (center)
+
+        // Square crop from center
         const min = Math.min(img.width, img.height);
+        if (!min || min < 10) {
+          toast('Fotka má neplatné rozměry');
+          return;
+        }
         const sx = (img.width - min) / 2;
         const sy = (img.height - min) / 2;
         ctx.drawImage(img, sx, sy, min, min, 0, 0, SIZE, SIZE);
+
         profile.photo = canvas.toDataURL('image/jpeg', 0.85);
         saveProfile();
         updateHeader();
         renderPage('profil');
         toast('Fotka nahrána ✓');
-      };
-      img.src = ev.target.result;
+      } catch (err) {
+        console.error('Canvas error', err);
+        toast('Chyba při zpracování fotky');
+      }
     };
-    reader.readAsDataURL(file);
+
+    img.src = dataUrl;
   };
-  input.click();
+
+  reader.readAsDataURL(file);
 }
 
 function removeProfilePhoto() {
