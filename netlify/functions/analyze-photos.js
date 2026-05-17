@@ -1,8 +1,8 @@
-// Netlify serverless function – AI analýza fotek ekzému
+// Netlify serverless function – AI analýza fotek ekzému přes Google Gemini
 // Endpoint: /.netlify/functions/analyze-photos
+// Free tier: 1000 requests/day s Gemini 2.5 Flash
 
 exports.handler = async (event) => {
-  // CORS headers
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
@@ -22,14 +22,14 @@ exports.handler = async (event) => {
     };
   }
 
-  // Check API key
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  // Check API key (Gemini)
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return {
       statusCode: 500,
       headers,
       body: JSON.stringify({
-        error: 'API klíč není nastaven. Přidejte ANTHROPIC_API_KEY v Netlify Site settings → Environment variables.',
+        error: 'API klíč Gemini není nastaven. Přidejte GEMINI_API_KEY v Netlify Site settings → Environment variables. Klíč získáte zdarma na https://aistudio.google.com/apikey',
       }),
     };
   }
@@ -51,11 +51,10 @@ exports.handler = async (event) => {
       const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
       if (!match) throw new Error('Neplatný formát fotky (chybí data URL prefix)');
       let mediaType = match[1].toLowerCase().trim();
-      // Anthropic supports: image/jpeg, image/png, image/gif, image/webp
-      const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
       if (mediaType === 'image/jpg') mediaType = 'image/jpeg';
+      const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
       if (!allowed.includes(mediaType)) {
-        throw new Error(`Nepodporovaný formát fotky: ${mediaType}. Použijte JPEG, PNG, GIF nebo WebP.`);
+        throw new Error(`Nepodporovaný formát fotky: ${mediaType}`);
       }
       const data = match[2];
       if (!data || data.length < 100) {
@@ -81,18 +80,18 @@ exports.handler = async (event) => {
       ? `Jde o dítě${childName ? ' jménem ' + childName : ''}${childAge ? ' (věk ' + childAge + ')' : ''}.`
       : '';
 
-    const prompt = `Tyto dvě fotografie zobrazují ekzém dítěte. ${childInfo}
+    const prompt = `Jsi pomocný asistent pro rodiče dítěte s ekzémem. Vidíš dvě fotografie ekzému stejného dítěte. ${childInfo}
 
-První fotka je STARŠÍ (pořízena ${date2 || 'dříve'}).
-Druhá fotka je NOVĚJŠÍ (pořízena ${date1 || 'nyní'}).
+První fotka (image_1) je STARŠÍ (pořízena ${date2 || 'dříve'}).
+Druhá fotka (image_2) je NOVĚJŠÍ (pořízena ${date1 || 'nyní'}).
 
-Prosím porovnej obě fotografie a odpověz v češtině podle této struktury:
+Pečlivě obě fotky porovnej a odpověz česky podle této struktury:
 
 **🔍 Celkový vývoj**
-Krátké hodnocení v jedné větě: zlepšení, zhoršení, nebo stabilní stav.
+Jednou větou: zlepšení, zhoršení, nebo stabilní stav.
 
 **📍 Konkrétní pozorování**
-- Kde přesně na těle vidíš změny (tváře, lokty, záda…)
+- Kde přesně na těle vidíš změny (tváře, lokty, záda, ...)
 - Velikost a rozsah postižených ploch
 - Intenzita zarudnutí a podráždění
 - Stav kůže (suchá, šupinatá, mokvavá, hojící se)
@@ -100,38 +99,43 @@ Krátké hodnocení v jedné větě: zlepšení, zhoršení, nebo stabilní stav
 **💡 Doporučení**
 2–3 konkrétní rady co dál sledovat nebo na co se zaměřit.
 
-⚠️ Poznámka: Toto není lékařská diagnóza. Při jakémkoli zhoršení nebo pochybnostech kontaktujte dermatologa.
+⚠️ Toto není lékařská diagnóza. Při zhoršení nebo pochybnostech kontaktujte dermatologa.
 
 Buď konkrétní, ale citlivý – jde o malé dítě a starostlivého rodiče.`;
 
-    // Call Anthropic API
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    // Call Google Gemini API
+    const model = 'gemini-2.5-flash';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+    const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
-        max_tokens: 1024,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'image', source: { type: 'base64', media_type: p2.mediaType, data: p2.data } },
-              { type: 'image', source: { type: 'base64', media_type: p1.mediaType, data: p1.data } },
-              { type: 'text', text: prompt },
-            ],
-          },
+        contents: [{
+          parts: [
+            { text: 'image_1 (starší fotka):' },
+            { inline_data: { mime_type: p2.mediaType, data: p2.data } },
+            { text: 'image_2 (novější fotka):' },
+            { inline_data: { mime_type: p1.mediaType, data: p1.data } },
+            { text: prompt },
+          ],
+        }],
+        generationConfig: {
+          temperature: 0.4,
+          maxOutputTokens: 1024,
+        },
+        safetySettings: [
+          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
+          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
+          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' },
+          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
         ],
       }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error('Anthropic API error:', response.status, errText);
-      // Try to parse error to give user a useful message
+      console.error('Gemini API error:', response.status, errText);
       let detail = errText;
       try {
         const parsed = JSON.parse(errText);
@@ -141,13 +145,27 @@ Buď konkrétní, ale citlivý – jde o malé dítě a starostlivého rodiče.`
         statusCode: response.status,
         headers,
         body: JSON.stringify({
-          error: `Anthropic API (${response.status}): ${detail.substring(0, 300)}`,
+          error: `Gemini API (${response.status}): ${detail.substring(0, 400)}`,
         }),
       };
     }
 
     const result = await response.json();
-    const analysis = result.content?.map((c) => c.text || '').join('') || 'Analýza se nezdařila.';
+    let analysis = '';
+    try {
+      analysis = result.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
+    } catch {}
+
+    if (!analysis) {
+      console.error('Empty Gemini response:', JSON.stringify(result));
+      return {
+        statusCode: 500,
+        headers,
+        body: JSON.stringify({
+          error: 'Gemini vrátil prázdnou odpověď. Možná byly fotky zablokovány safety filtrem.',
+        }),
+      };
+    }
 
     return {
       statusCode: 200,
