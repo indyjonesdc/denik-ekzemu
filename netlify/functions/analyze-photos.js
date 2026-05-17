@@ -49,12 +49,32 @@ exports.handler = async (event) => {
     // Extract base64 data and media type
     const extract = (dataUrl) => {
       const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-      if (!match) throw new Error('Neplatný formát fotky');
-      return { mediaType: match[1], data: match[2] };
+      if (!match) throw new Error('Neplatný formát fotky (chybí data URL prefix)');
+      let mediaType = match[1].toLowerCase().trim();
+      // Anthropic supports: image/jpeg, image/png, image/gif, image/webp
+      const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+      if (mediaType === 'image/jpg') mediaType = 'image/jpeg';
+      if (!allowed.includes(mediaType)) {
+        throw new Error(`Nepodporovaný formát fotky: ${mediaType}. Použijte JPEG, PNG, GIF nebo WebP.`);
+      }
+      const data = match[2];
+      if (!data || data.length < 100) {
+        throw new Error('Fotka je prázdná nebo poškozená');
+      }
+      return { mediaType, data };
     };
 
-    const p1 = extract(photo1);
-    const p2 = extract(photo2);
+    let p1, p2;
+    try {
+      p1 = extract(photo1);
+      p2 = extract(photo2);
+    } catch (err) {
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: err.message }),
+      };
+    }
 
     // Build prompt
     const childInfo = childName || childAge
@@ -93,7 +113,7 @@ Buď konkrétní, ale citlivý – jde o malé dítě a starostlivého rodiče.`
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-3-5-sonnet-20241022',
         max_tokens: 1024,
         messages: [
           {
@@ -110,12 +130,18 @@ Buď konkrétní, ale citlivý – jde o malé dítě a starostlivého rodiče.`
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error('Anthropic API error:', errText);
+      console.error('Anthropic API error:', response.status, errText);
+      // Try to parse error to give user a useful message
+      let detail = errText;
+      try {
+        const parsed = JSON.parse(errText);
+        detail = parsed.error?.message || parsed.message || errText;
+      } catch {}
       return {
         statusCode: response.status,
         headers,
         body: JSON.stringify({
-          error: `Anthropic API vrátilo chybu (${response.status}). Zkontrolujte API klíč a kredit na console.anthropic.com.`,
+          error: `Anthropic API (${response.status}): ${detail.substring(0, 300)}`,
         }),
       };
     }
