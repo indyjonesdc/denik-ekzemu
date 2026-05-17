@@ -587,41 +587,44 @@ async function analyzePhotos(idx1, idx2) {
   </div>`;
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch('/api/analyze-photos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: p2.data.split(';')[0].split(':')[1], data: p2.data.split(',')[1] } },
-            { type: 'image', source: { type: 'base64', media_type: p1.data.split(';')[0].split(':')[1], data: p1.data.split(',')[1] } },
-            { type: 'text', text: `Tyto dvě fotografie zobrazují ekzém dítěte. První fotka je starší (${p2.date}), druhá fotka je novější (${p1.date}).
-
-Prosím porovnej je a odpověz v češtině:
-1. Celkové hodnocení: zlepšilo se, zhoršilo, nebo zůstalo stejné?
-2. Konkrétní změny: kde přesně vidíš rozdíl (místo na těle, velikost, intenzita zarudnutí)?
-3. Doporučení: na co si dát pozor nebo co sledovat dál?
-
-Buď konkrétní, ale citlivý – jde o malé dítě. Nestavuj se do role lékaře.` }
-          ]
-        }]
+        photo1: p1.data,
+        photo2: p2.data,
+        date1: p1.date + ' ' + p1.time,
+        date2: p2.date + ' ' + p2.time,
+        childAge: profile.age || '',
+        childName: profile.name || ''
       })
     });
 
     const result = await response.json();
-    const text = result.content?.map(c => c.text || '').join('') || 'Analýza se nezdařila.';
+
+    if (!response.ok) {
+      box.innerHTML = `<div class="analysis-box">
+        <div class="analysis-title" style="color:#A32D2D">⚠️ Chyba analýzy</div>
+        <div class="analysis-body">${result.error || 'Neznámá chyba'}</div>
+      </div>`;
+      return;
+    }
+
+    // Render with markdown-like formatting
+    const formatted = (result.analysis || 'Analýza se nezdařila.')
+      .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#185FA5">$1</strong>')
+      .replace(/\n\n/g, '</p><p style="margin-top:10px">')
+      .replace(/^/, '<p>')
+      .replace(/$/, '</p>');
 
     box.innerHTML = `<div class="analysis-box">
-      <div class="analysis-title">🔍 Porovnání: ${p2.date} → ${p1.date}</div>
-      <div class="analysis-body">${text}</div>
+      <div class="analysis-title">🔍 Porovnání: ${p2.date} ${p2.time} → ${p1.date} ${p1.time}</div>
+      <div class="analysis-body">${formatted}</div>
     </div>`;
   } catch (err) {
     box.innerHTML = `<div class="analysis-box">
-      <div class="analysis-title" style="color:#A32D2D">⚠️ Chyba analýzy</div>
-      <div class="analysis-body">Nepodařilo se připojit k AI. Zkontrolujte připojení k internetu.</div>
+      <div class="analysis-title" style="color:#A32D2D">⚠️ Chyba spojení</div>
+      <div class="analysis-body">Nepodařilo se připojit k AI funkci. Zkontrolujte internetové připojení.</div>
     </div>`;
   }
 }
