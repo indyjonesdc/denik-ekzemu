@@ -921,38 +921,98 @@ function handleProfilePhotoSelected(e) {
     return;
   }
 
+  // Use createImageBitmap if available – best support for HEIC and other formats
+  if (window.createImageBitmap) {
+    console.log('[Photo] Using createImageBitmap');
+    createImageBitmap(file).then(bitmap => {
+      console.log('[Photo] Bitmap created:', bitmap.width, 'x', bitmap.height);
+      processBitmap(bitmap);
+      bitmap.close && bitmap.close();
+    }).catch(err => {
+      console.warn('[Photo] createImageBitmap failed, falling back', err);
+      fallbackFileReader(file);
+    });
+  } else {
+    fallbackFileReader(file);
+  }
+}
+
+function processBitmap(bitmap) {
+  try {
+    const SIZE = 240;
+    const canvas = document.createElement('canvas');
+    canvas.width = SIZE;
+    canvas.height = SIZE;
+    const ctx = canvas.getContext('2d');
+
+    const min = Math.min(bitmap.width, bitmap.height);
+    if (!min || min < 10) {
+      toast('Fotka má neplatné rozměry');
+      return;
+    }
+    const sx = (bitmap.width - min) / 2;
+    const sy = (bitmap.height - min) / 2;
+    ctx.drawImage(bitmap, sx, sy, min, min, 0, 0, SIZE, SIZE);
+    const resized = canvas.toDataURL('image/jpeg', 0.75);
+    console.log('[Photo] Resized via bitmap:', resized.length, 'bytes');
+    saveProfilePhoto(resized);
+  } catch (err) {
+    console.error('[Photo] Bitmap canvas error', err);
+    toast('Chyba při zpracování fotky');
+  }
+}
+
+function fallbackFileReader(file) {
+  console.log('[Photo] Using FileReader fallback');
   const reader = new FileReader();
+  let timeout = setTimeout(() => {
+    toast('Fotka se nenačetla (timeout). Zkuste menší fotku nebo JPG.');
+    console.error('[Photo] FileReader timeout');
+  }, 15000);
+
   reader.onerror = () => {
+    clearTimeout(timeout);
     toast('Chyba při čtení fotky');
     console.error('[Photo] FileReader error', reader.error);
   };
 
   reader.onload = (ev) => {
+    clearTimeout(timeout);
     const dataUrl = ev.target.result;
-    console.log('[Photo] Data URL length:', dataUrl?.length, 'first 50:', dataUrl?.substring(0, 50));
-
     if (!dataUrl || typeof dataUrl !== 'string') {
       toast('Fotka se nenačetla');
       return;
     }
 
     const img = new Image();
+    let imgTimeout = setTimeout(() => {
+      console.warn('[Photo] Image() load timeout');
+      // Save raw if small enough
+      if (dataUrl.length < 500000) {
+        saveProfilePhoto(dataUrl);
+      } else {
+        toast('Fotka se nepodařilo zpracovat (timeout). Zkuste JPG formát.');
+      }
+    }, 10000);
 
-    img.onerror = (err) => {
-      console.warn('[Photo] Image() failed, trying direct save', err);
-      // Fallback: save raw data url
-      saveProfilePhoto(dataUrl);
+    img.onerror = () => {
+      clearTimeout(imgTimeout);
+      console.warn('[Photo] Image() failed');
+      if (dataUrl.length < 500000) {
+        saveProfilePhoto(dataUrl);
+      } else {
+        toast('Tento formát se nepodařilo načíst. Zkuste JPG nebo PNG.');
+      }
     };
 
     img.onload = () => {
-      console.log('[Photo] Image loaded:', img.width, 'x', img.height);
+      clearTimeout(imgTimeout);
       try {
-        const SIZE = 240; // smaller for reliable localStorage fit
+        const SIZE = 240;
         const canvas = document.createElement('canvas');
         canvas.width = SIZE;
         canvas.height = SIZE;
         const ctx = canvas.getContext('2d');
-
         const min = Math.min(img.width, img.height);
         if (!min || min < 10) {
           toast('Fotka má neplatné rozměry');
@@ -962,7 +1022,6 @@ function handleProfilePhotoSelected(e) {
         const sy = (img.height - min) / 2;
         ctx.drawImage(img, sx, sy, min, min, 0, 0, SIZE, SIZE);
         const resized = canvas.toDataURL('image/jpeg', 0.75);
-        console.log('[Photo] Resized to:', resized.length, 'bytes');
         saveProfilePhoto(resized);
       } catch (err) {
         console.error('[Photo] Canvas error', err);
